@@ -3,24 +3,27 @@
 # script to prepare telemetry data for running home range analyses
 # written by Joanna Burgar (Joanna.Burgar@gov.bc.ca) - 04-Oct-2019
 #####################################################################################
-.libPaths("C:/Program Files/R/R-3.6.0/library") # to ensure reading/writing libraries from C drive (H drive too slow)
+.libPaths("C:/Program Files/R/R-4.2.0/library") # to ensure reading/writing libraries from C drive (H drive too slow)
 
 # overall process: 
 #- Upload Animal metadata and collar metadata (if applicable)
 #- Upload shapefiles or csv of telemetry data
 #- written for example of Barred Owl (BDOW) data
 #- Output R object ready for home range analyses (MCP & KDE) 
+#** MAKE SURE YOU'RE UPLOADING MOST RECENT METADATA FILES FROM "M:\WANSHARE\ESD\ESD_Shared\Region 2\Wildlife\Region 2 Wildlife Mgmt\Collar DATA & MANAGEMENT"
 
 # run libraries
 library(ggplot2)    # for plotting
-library(dplyr)      # for data manipulation
+library(dbplyr)  # for data manipulation
 library(stringr)    # for formatting character data
 library(lubridate)  # for date-time conversions
 library(sf)         # for uploading shapefiles and working with sf objects
+library(sp)         # for changing lat/long to UTM
+library(rgdal)
 
 # set up working directories on H drive - map/revise as appropriate
-InputDir <- c("H:/R/Analysis/Generic_HomeRange/Input")
-OutputDir <- c("H:/R/Analysis/Generic_HomeRange/Output")
+InputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Input")
+OutputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Output")
 GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
 
 ##############################################################
@@ -29,23 +32,75 @@ GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
 ## load data into R
 setwd(InputDir)
 
-###--- upload animal and collar metadatda files
-anml.full <- read.csv("BDOW_metadata.csv", # point to appropriate metadata file
-                     header = TRUE, stringsAsFactors = TRUE, na.strings=c("", "NA"),)
+###--- upload animal and collar metadata files
+Elk_metadata <- read_csv("Capture and Telemetry_DATABASE_April 29_2022 (version 1).csv")
+# select relevant records
+anml.full <- Elk_metadata %>%
+  mutate(Serial_no = as.numeric(`Serial No.`)) %>%
+  filter(Make == "Vectronics",
+         Species == "Roosevelt elk",
+         Serial_no >= 22585)
+anml.full <- anml.full %>%
+  mutate(AnimalID = row.names(anml.full),
+         Cptr_Northing = as.numeric(`Northing (capture)`),
+         Cptr_Easting = as.numeric(`Easting (capture)`)) %>%
+  select(AnimalID,
+         Serial_no,
+         Species, 
+         Sex, 
+         Age_Class = `Age Class`, 
+         Comments, 
+         Cptr_EPU = `Population Unit`,
+         Cptr_Northing,
+         Cptr_Easting,
+         Cptr_UTM = `UTM Zone (capture)`,
+         Cptr_Date = Date, 
+         Cptr_Time = Time, 
+         Rls_Date = `Release Date`, 
+         Rls_Time = `Release Time`,
+         Rls_EPU = `Population Unit (release)`,
+         Cptr_Method = `Capture Method`, 
+         Drug = `Immobilization Drug`, 
+         Volume = Volume...43, 
+         `Tick Hair Loss`:Teeth)
 
 glimpse(anml.full) # view data
 head(anml.full)
 
-# subset to smaller dataframe, and rename columns for consistency
+# change lat&longs to UTM
+xy <- anml.full %>%
+  select(AnimalID, Cptr_UTM, Long = Cptr_Northing, Lat = Cptr_Easting) %>%
+  filter(Cptr_UTM == "Lat Long")
+coordinates(xy) <- c("Long", "Lat")
+proj4string(xy) <- CRS("+proj=longlat +datum=NAD83")
+res <- spTransform(xy, CRS("+proj=utm +zone=10 ellps=WGS84"))
+new_coord <- as.data.frame(res)
+
+anml.coord <- full_join(anml.full, new_coord, by=c("AnimalID", "Cptr_UTM"))%>%
+  mutate(Cptr_UTM = 10,
+         Cptr_Northing = if_else(is.na(Lat), Cptr_Northing, Lat),
+         Cptr_Easting = if_else(is.na(Long), round(Cptr_Easting, 0), round(Long, 0))) %>%
+  select(AnimalID:Teeth)
+
+anml.full <- anml.coord
+
+
+##### subset to smaller dataframe, and rename columns for consistency
 names(anml.full)
-anml <- anml.full[c(1:8)] # if not in the suggested order, re-order to reflect order of colnames below
-head(anml)  
-colnames(anml) <-  c("AnimalID","Species","Sex", "Age_Class","Cptr_Northing","Cptr_Easting", "Cptr_Date","Rls_Date")
+anml <- anml.full%>%
+  select("AnimalID","Species","Sex", "Age_Class","Cptr_Northing","Cptr_Easting", "Cptr_Date","Rls_Date")
 head(anml)  # check
 
+# fix age classification
+anml$Age_Class <- case_when(
+  grepl("A", anml$Age_Class) ~ "A",
+  grepl("Y", anml$Age_Class) ~ "Y",
+  TRUE ~ anml$Age_Class
+)
+
 # format dates for R
-anml$Cptr_Datep <- as.POSIXct(strptime(anml$Cptr_Date, format = "%Y%m%d"))
-anml$Rls_Datep <- as.POSIXct(strptime(anml$Rls_Date, format = "%Y%m%d"))
+anml$Cptr_Datep <- as.POSIXct(strptime(anml$Cptr_Date, format = "%d-%b-%y"))
+anml$Rls_Datep <- as.POSIXct(strptime(anml$Rls_Date, format = "%d-%b-%y"))
 
 # add in Year
 anml$Cptr_Year <- year(anml$Cptr_Datep)
@@ -60,7 +115,7 @@ anml %>% group_by(Cptr_Year, Species) %>% summarise(min(Cptr_Datep), max(Cptr_Da
 ###--- to turn the capture points into spatial object, using the CRS for NAD83 UTM Zone 10
 # may need to clean some data during the import
 # in this example, issue with one of the coordinates, delete that row from df before converting to sf object
-Cpt.sf <- st_as_sf(anml[anml$Cptr_Northing > 5500000,], coords=c("Cptr_Easting","Cptr_Northing"), crs=26910)
+Cpt.sf <- st_as_sf(anml, coords=c("Cptr_Easting","Cptr_Northing"), crs=26910)
 
 # plot to check
 ggplot() +
@@ -88,8 +143,8 @@ ggplot() +
 
 #############################################################
 ###--- For shapefiles
-setwd(GISDir) # point to where shapefiles are housed
-list.files(GISDir, pattern='\\.shp$', recursive = TRUE)
+# setwd(GISDir) # point to where shapefiles are housed
+# list.files(GISDir, pattern='\\.shp$', recursive = TRUE)
 # will list all shapefiles in the folder and sub-folders
 # necessary for uploading individual shapefiles as need pathway (dsn) and shapefile name (layer)
 
