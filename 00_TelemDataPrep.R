@@ -157,31 +157,39 @@ ggplot() +
 
 ###--- For csv upload
 setwd(InputDir)
-telem <- read.csv("BDOW_TelemData.csv", header=TRUE, 
-                  na.strings = c("NA",""), stringsAsFactors = TRUE)
+telem <- read_csv("Position-2022-Jun-07_15-19-55.csv", 
+                  col_types = cols(`Acq. Time [LMT]` = col_datetime(format = "%Y-%m-%d %H:%M:%S")))
 glimpse(telem) # check columns are coming in as appropriate class
 head(telem) # check that data is reading correctly
 summary(telem) # check if spelling inconsistencies or NAs
 #############################################################
 
 ###--- check data quality and remove any objectional rows
-# latitude coordinate off - delete that row
-telem <- telem[order(telem$Latitude),]
-tail(telem) # only 1 latitiude coordinate off (probably a typo where 9 should be 5 but delete to be safe) 
-# otherwise data was cleaned prior to uploading and is good to go
+# delete all records in UTM zone 33 (Germany)
+telem <- telem[telem$Zone != 33,]
 
 # use the CRS for lat/long and WGS84
-telem.sf <- st_as_sf(telem[telem$Latitude<90,], coords=c("Longitude","Latitude"), crs=4326) %>% 
-  select(USFW.Band, Date, Time, Group) %>% rename(AnimalID = USFW.Band) # selects only specific columns and chagnes the name to match column name in anml object
+telem.sf <- st_as_sf(telem[telem$`Latitude[deg]`<90,], coords=c("Longitude[deg]","Latitude[deg]"), crs=4326) %>% 
+  mutate(Time = as.POSIXct(strptime(telem.sf$`Acq. Time [LMT]`, "%H:%M:%S")),
+         Date = as.POSIXct(strptime(telem.sf$`Acq. Time [LMT]`, "%Y-%m-%d"))) %>%
+  select(CollarID = `Collar ID`, Date, Time)
+
+# add animalID field
+anml.dat <- anml.full %>%
+  mutate(Cptr_Date = as.POSIXct(strptime(Cptr_Date, format = "%d-%b-%y"))) %>%
+  select(AnimalID, Serial_no, Cptr_Date)
+telem.tmp <- full_join(anml.dat, telem.sf, by=c("Serial_no"="Collar ID")) %>%
+  filter(Time >=)
+
 
 summary(telem.sf)
 # create new Group names - revise as appropriate
-telem.sf$Group.New <- as.factor(ifelse(grepl("Captive", telem.sf$Group),"Captive",
-                                       ifelse(grepl("Relocated", telem.sf$Group), "Relocated",
-                                              ifelse(grepl("Control", telem.sf$Group), "Control",
-                                                     ifelse(grepl("Resident", telem.sf$Group), "Resident", NA)))))
-
-table(telem.sf$Group, telem.sf$Group.New) # check that grouping worked
+# telem.sf$Group.New <- as.factor(ifelse(grepl("Captive", telem.sf$Group),"Captive",
+#                                        ifelse(grepl("Relocated", telem.sf$Group), "Relocated",
+#                                               ifelse(grepl("Control", telem.sf$Group), "Control",
+#                                                      ifelse(grepl("Resident", telem.sf$Group), "Resident", NA)))))
+# 
+# table(telem.sf$Group, telem.sf$Group.New) # check that grouping worked
 
 # format dates for R
 telem.sf$Date.Time <- paste(telem.sf$Date, telem.sf$Time, sep=" ")
