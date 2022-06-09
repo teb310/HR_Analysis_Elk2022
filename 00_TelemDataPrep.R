@@ -22,7 +22,7 @@ library(sp)         # for changing lat/long to UTM
 library(rgdal)
 library(tidyverse)
 
-# set up working directories on H drive - map/revise as appropriate
+# set up working directories
 InputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Input")
 OutputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Output")
 # GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
@@ -37,10 +37,10 @@ setwd(InputDir)
 Elk_metadata <- read_csv("Capture and Telemetry_DATABASE_April 29_2022 (version 1).csv")
 # select relevant records
 anml.full <- Elk_metadata %>%
-  mutate(Serial_no = as.numeric(`Serial No.`)) %>%
+  mutate(CollarID = as.numeric(`Serial No.`)) %>%
   filter(Make == "Vectronics",
          Species == "Roosevelt elk",
-         Serial_no >= 22585)
+         CollarID >= 22585)
 anml.full <- anml.full %>%
   mutate(AnimalID = as.numeric(row.names(anml.full)),
          Cptr_Northing = as.numeric(`Northing (capture)`),
@@ -48,7 +48,7 @@ anml.full <- anml.full %>%
          Species = as.factor(Species), 
          Sex = as.factor(Sex)) %>%
   select(AnimalID,
-         Serial_no,
+         CollarID,
          Species, 
          Sex, 
          Age_Class = `Age Class`, 
@@ -163,41 +163,52 @@ setwd(InputDir)
 telem <- read_csv("Position-2022-Jun-07_15-19-55.csv", 
                   col_types = cols(`Acq. Time [LMT]` = col_datetime(format = "%Y-%m-%d %H:%M:%S")))
 glimpse(telem) # check columns are coming in as appropriate class
+telem$`Mortality Status` <- as.factor(telem$`Mortality Status`)
+telem$CollarID <- telem$`Collar ID`
 head(telem) # check that data is reading correctly
 summary(telem) # check if spelling inconsistencies or NAs
-#############################################################
 
-###--- check data quality and remove any objectional rows
+
 # delete all records in UTM zone 33 (Germany)
 telem <- telem[telem$Zone != 33,]
 
-# use the CRS for lat/long and WGS84
-telem.sf <- st_as_sf(telem[telem$`Latitude[deg]`<90,], coords=c("Longitude[deg]","Latitude[deg]"), crs=4326) %>%
+# format date
+telem <- telem %>%
   separate(`Acq. Time [LMT]`, c("Date", "Time"), sep = " ")
-telem.sf <- telem.sf %>%
-  mutate(Date = as.POSIXct(strptime(telem.sf$Date, "%Y-%m-%d"))) %>%
-  select(CollarID = `Collar ID`, Date, Time)
+telem$Date <- as.POSIXct(strptime(telem$Date, "%Y-%m-%d"))
 
 # add animalID field
 anml.dat <- anml.full %>%
   mutate(Cptr_Date = as.POSIXct(strptime(Cptr_Date, format = "%d-%b-%y")),
          AnimalID = as.integer(AnimalID)) %>%
-  select(AnimalID, Serial_no, Cptr_Date)
-telem.tmp <- full_join(telem.sf, anml.dat, by=c("CollarID"="Serial_no")) %>%
+  select(AnimalID, CollarID, Cptr_Date)
+telem.tmp <- full_join(telem, anml.dat, by="CollarID") %>%
   # only include records after capture
-  filter(Date >= Cptr_Date)
-# sort out duplicate entries
-telem.dup <- telem.tmp %>% select(CollarID:geometry) %>% duplicated(fromLast = TRUE) %>% as.data.frame()
+  filter(Date >= (Cptr_Date+1))
+  # sort out duplicate entries
+telem.dup <- telem.tmp %>% select(Date:CollarID) %>% duplicated(fromLast = TRUE) %>% as.data.frame()
 colnames(telem.dup) <- "Duplicated"
 telem.dup <- bind_cols(telem.tmp, telem.dup)
 telem.dup <- telem.dup %>%
   filter(Duplicated == F)
-telem.sf <- telem.dup %>%
-  select(AnimalID, CollarID:geometry)
 
-summary(telem.sf)
+# get rid of entries port-mortality
+telem.mort <- telem.dup %>%
+  group_by(AnimalID) %>%
+  filter(`Mortality Status` == "Mortality No Radius") %>%
+  arrange(Date, ) %>%
+  slice_head() %>%
+  select(AnimalID, Mort_Date = Date)
 
-# If all looks good, delete temp files
+telem.new <- full_join(telem.dup, telem.mort, by="AnimalID") %>%
+  mutate(Mort_Date = if_else(is.na(Mort_Date), as.POSIXct(Sys.Date()), Mort_Date)) %>%
+  filter(Date < Mort_Date)
+summary(telem.new)
+
+# If all looks good, add in geometry
+# use the CRS for lat/long and WGS84
+telem.sf <- st_as_sf(telem.new[telem.new$`Latitude[deg]`<90,], coords=c("Longitude[deg]","Latitude[deg]"), crs=4326) %>%  
+  select(AnimalID, CollarID, Date, Time, geometry)
 
 # create new Group names - revise as appropriate
 # telem.sf$Group.New <- as.factor(ifelse(grepl("Captive", telem.sf$Group),"Captive",
@@ -270,7 +281,7 @@ telem.1fix <- telem.sf %>%
   slice_min(Date.Timep)
 
 # redo
-counts.per.day <- telem.1fix %>% 
+counts.per.day1 <- telem.1fix %>% 
   st_drop_geometry() %>%
   group_by(AnimalID, Day.j) %>% 
   summarize(total = n(), unique = unique(Day.j)) %>% 
@@ -280,8 +291,8 @@ counts.per.day <- telem.1fix %>%
 pp = ggplot(data = counts.per.day, aes(total,total.j,col=AnimalID)) + 
   geom_point() + 
   ggtitle('Number of fixes per julien day per animal'); pp 
-# only 1 fix per day
-telem.sf <- telem.1fix
+# if want only 1 fix per day
+# telem.sf <- telem.1fix
 
 ## Q : How many fixes do we have per animal?
 p1 <- ggplot(telem.sf) + 
@@ -345,7 +356,7 @@ HR.sf <- left_join(telem.sf %>% select(AnimalID, Date.Timep, Year, Month, Day.j,
                    anml %>% select(-Cptr_Date, -Rls_Date), by = "AnimalID")
 
 glimpse(HR.sf)
-summary(HR.sf) # not all animals in both databases, 412 NAs
+summary(HR.sf)
 
 # drop levels if no entries
 HR.sf$Species <- droplevels(HR.sf$Species)
@@ -387,8 +398,8 @@ HR.sf$Animal_Season <- as.factor(paste(HR.sf$AnimalID, HR.sf$Season, sep="_"))
 HR.sf$Animal_Year <- as.factor(paste(HR.sf$AnimalID, as.factor(HR.sf$Year), sep="_"))
 
 as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Season, sort=TRUE)) 
-# 206 unique animal-seasons but only 183 with >= 50 obs, 190 with >= 25 obs
-as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) %>% view()
+# 206 unique animal-seasons but only 189 with >= 50 obs, 194 with >= 25 obs
+as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Year, sort=TRUE))
 # 281 unique animal-years but only 271 with >= 50 obs, 272 with >= 25 obs
 
 ###--- DECISION POINT - how many obs minimum for HR estimate?

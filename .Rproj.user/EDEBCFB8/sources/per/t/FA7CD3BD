@@ -1,0 +1,26 @@
+{
+    "id": "FA7CD3BD",
+    "path": "C:/Users/TBRUSH/R/HR_Analysis_Elk2022/00_TelemDataPrep.R",
+    "project_path": "00_TelemDataPrep.R",
+    "type": "r_source",
+    "hash": "467125423",
+    "contents": "",
+    "dirty": false,
+    "created": 1654625719810.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "2,51",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1654809947,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1654809947727,
+    "read_only": false,
+    "read_only_alternatives": []
+}

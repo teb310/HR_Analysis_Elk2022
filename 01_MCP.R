@@ -5,7 +5,7 @@
 # adapted from script written by genevieve perkins (genevieve.perkins@gov.bc.ca)
 # modified by Joanna Burgar (Joanna.Burgar@gov.bc.ca) - 06-Oct-2019
 #####################################################################################
-.libPaths("C:/Program Files/R/R-3.6.0/library")# to ensure reading/writing libraries from C drive (H drive too slow)
+.libPaths("C:/Program Files/R/R-4.2.0/library") # to ensure reading/writing libraries from C drive (H drive too slow)
 
 # overall process: 
 #- Define the area of interest per animal; availability/ vs use (MCP)
@@ -23,10 +23,10 @@ library(sf)
 library(sp)
 library(adehabitatHR)
 
-# set up working directories on H drive
-InputDir <- c("H:/R/Analysis/Generic_HomeRange/Input")
-OutputDir <- c("H:/R/Analysis/Generic_HomeRange/Output")
-GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
+# set up working directories
+InputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Input")
+OutputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Output")
+# GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
 
 ##############################################################
 #### LOAD and REVIEW DATA (BEGINNING)
@@ -36,17 +36,17 @@ setwd(InputDir)
 load("HR_InputData.RData")
 
 # review spatial object data - check to see if loaded properly
-st_geometry(HR.sf) # currently in 4326 CRS, lat/long
+st_geometry(HR.sf) # currently in WGS84 CRS, lat/long
 HR.sf$AnimalID <- as.factor(HR.sf$AnimalID)
 names(HR.sf)
 summary(HR.sf)
 
 # plot to check
-# check the spread of elk with maped locations 
+# check the spread of elk with mapped locations 
 bc <- bc_bound()
 SC <- nr_districts() %>% filter(ORG_UNIT %in% c("DCK", "DSQ", "DSC"))
 
-# Plot by AnimalID (29 individuals)
+# Plot by AnimalID (104 individuals)
 unique(HR.sf$AnimalID)
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
@@ -56,7 +56,7 @@ ggplot() +
   ggtitle("Animal GPS locations")
 
 
-# Plot by Animal_Season (29 animal_seasons)
+# Plot by Animal_Season (183 animal_seasons)
 unique(HR.sf.AS$Animal_Season)
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
@@ -65,8 +65,17 @@ ggplot() +
   theme_minimal() +
   ggtitle("Animal_Season GPS locations")
 
+# Plot by season
+unique(HR.sf$Season)
+ggplot() +
+  geom_sf(data=SC, fill="white", col="gray") +
+  geom_sf(data=HR.sf, aes(fill=Season, col=Season))+
+  coord_sf() +
+  theme_minimal() +
+  ggtitle("Seasonal GPS locations")
 
-# Plot by Animal_Year (24 individuals)
+
+# Plot by Animal_Year (271 individuals)
 unique(HR.sf.AY$Animal_Year)
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
@@ -74,6 +83,15 @@ ggplot() +
   coord_sf() +
   theme_minimal() +
   ggtitle("Animal_Year GPS locations")
+
+# Plot by year
+unique(HR.sf$Year)
+ggplot() +
+  geom_sf(data=SC, fill="white", col="gray") +
+  geom_sf(data=HR.sf, aes(fill=Year, col=Year))+
+  coord_sf() +
+  theme_minimal() +
+  ggtitle("Yearly GPS locations")
 
 ##############################################################
 #### LOAD and REVIEW DATA (END)
