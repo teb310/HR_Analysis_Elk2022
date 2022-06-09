@@ -20,11 +20,12 @@ library(lubridate)  # for date-time conversions
 library(sf)         # for uploading shapefiles and working with sf objects
 library(sp)         # for changing lat/long to UTM
 library(rgdal)
+library(tidyverse)
 
 # set up working directories on H drive - map/revise as appropriate
 InputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Input")
 OutputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Output")
-GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
+# GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
 
 ##############################################################
 #### METADATA EXPLORATION & FORMATTING (BEGINNING) 
@@ -41,9 +42,11 @@ anml.full <- Elk_metadata %>%
          Species == "Roosevelt elk",
          Serial_no >= 22585)
 anml.full <- anml.full %>%
-  mutate(AnimalID = row.names(anml.full),
+  mutate(AnimalID = as.numeric(row.names(anml.full)),
          Cptr_Northing = as.numeric(`Northing (capture)`),
-         Cptr_Easting = as.numeric(`Easting (capture)`)) %>%
+         Cptr_Easting = as.numeric(`Easting (capture)`),
+         Species = as.factor(Species), 
+         Sex = as.factor(Sex)) %>%
   select(AnimalID,
          Serial_no,
          Species, 
@@ -72,7 +75,7 @@ xy <- anml.full %>%
   select(AnimalID, Cptr_UTM, Long = Cptr_Northing, Lat = Cptr_Easting) %>%
   filter(Cptr_UTM == "Lat Long")
 coordinates(xy) <- c("Long", "Lat")
-proj4string(xy) <- CRS("+proj=longlat +datum=NAD83")
+proj4string(xy) <- CRS("+proj=longlat +datum=WGS84")
 res <- spTransform(xy, CRS("+proj=utm +zone=10 ellps=WGS84"))
 new_coord <- as.data.frame(res)
 
@@ -92,11 +95,11 @@ anml <- anml.full%>%
 head(anml)  # check
 
 # fix age classification
-anml$Age_Class <- case_when(
+anml$Age_Class <- as.factor(case_when(
   grepl("A", anml$Age_Class) ~ "A",
   grepl("Y", anml$Age_Class) ~ "Y",
   TRUE ~ anml$Age_Class
-)
+))
 
 # format dates for R
 anml$Cptr_Datep <- as.POSIXct(strptime(anml$Cptr_Date, format = "%d-%b-%y"))
@@ -169,20 +172,33 @@ summary(telem) # check if spelling inconsistencies or NAs
 telem <- telem[telem$Zone != 33,]
 
 # use the CRS for lat/long and WGS84
-telem.sf <- st_as_sf(telem[telem$`Latitude[deg]`<90,], coords=c("Longitude[deg]","Latitude[deg]"), crs=4326) %>% 
-  mutate(Time = as.POSIXct(strptime(telem.sf$`Acq. Time [LMT]`, "%H:%M:%S")),
-         Date = as.POSIXct(strptime(telem.sf$`Acq. Time [LMT]`, "%Y-%m-%d"))) %>%
+telem.sf <- st_as_sf(telem[telem$`Latitude[deg]`<90,], coords=c("Longitude[deg]","Latitude[deg]"), crs=4326) %>%
+  separate(`Acq. Time [LMT]`, c("Date", "Time"), sep = " ")
+telem.sf <- telem.sf %>%
+  mutate(Date = as.POSIXct(strptime(telem.sf$Date, "%Y-%m-%d"))) %>%
   select(CollarID = `Collar ID`, Date, Time)
 
 # add animalID field
 anml.dat <- anml.full %>%
-  mutate(Cptr_Date = as.POSIXct(strptime(Cptr_Date, format = "%d-%b-%y"))) %>%
+  mutate(Cptr_Date = as.POSIXct(strptime(Cptr_Date, format = "%d-%b-%y")),
+         AnimalID = as.integer(AnimalID)) %>%
   select(AnimalID, Serial_no, Cptr_Date)
-telem.tmp <- full_join(anml.dat, telem.sf, by=c("Serial_no"="Collar ID")) %>%
-  filter(Time >=)
-
+telem.tmp <- full_join(telem.sf, anml.dat, by=c("CollarID"="Serial_no")) %>%
+  # only include records after capture
+  filter(Date >= Cptr_Date)
+# sort out duplicate entries
+telem.dup <- telem.tmp %>% select(CollarID:geometry) %>% duplicated(fromLast = TRUE) %>% as.data.frame()
+colnames(telem.dup) <- "Duplicated"
+telem.dup <- bind_cols(telem.tmp, telem.dup)
+telem.dup <- telem.dup %>%
+  filter(Duplicated == F)
+telem.sf <- telem.dup %>%
+  select(AnimalID, CollarID:geometry)
 
 summary(telem.sf)
+
+# If all looks good, delete temp files
+
 # create new Group names - revise as appropriate
 # telem.sf$Group.New <- as.factor(ifelse(grepl("Captive", telem.sf$Group),"Captive",
 #                                        ifelse(grepl("Relocated", telem.sf$Group), "Relocated",
@@ -193,17 +209,17 @@ summary(telem.sf)
 
 # format dates for R
 telem.sf$Date.Time <- paste(telem.sf$Date, telem.sf$Time, sep=" ")
-telem.sf$Date.Timep <- as.POSIXct(strptime(telem.sf$Date.Time, format = "%Y%m%d %H:%M:%S"))
+telem.sf$Date.Timep <- as.POSIXct(strptime(telem.sf$Date.Time, format = "%Y-%m-%d %H:%M:%S"))
 telem.sf$Year <- year(telem.sf$Date.Timep)
 telem.sf$Month <- month(telem.sf$Date.Timep)
-telem.sf$Day.j <- julian(telem.sf$Date.Timep) # Julian day
+telem.sf$Day.j <- round(as.numeric(julian(telem.sf$Date.Timep)), 0) # Julian day
 
 glimpse(telem.sf)
 summary(telem.sf)
 
 # plot to check
 ggplot() +
-  geom_sf(data = telem.sf, aes(fill=Group.New, col=Group.New)) +
+  geom_sf(data = telem.sf) +
   coord_sf() +
   theme_minimal()
 
@@ -222,10 +238,15 @@ ggplot() +
 
 ###--- Create Season (breeding) dates
 # check date range by year for telemetry data
-telem.sf %>% group_by(Year) %>% summarise(min(Date.Timep), max(Date.Timep)) %>% st_drop_geometry()
-# Year `min(Date.Timep)`   `max(Date.Timep)`  
-# 1  2017 2017-04-21 09:59:28 2017-10-31 10:01:36
-# 2  2018 2018-03-11 18:40:00 2018-10-25 02:01:36
+telem.sf %>% st_drop_geometry() %>% group_by(Year) %>% summarise(Min = min(Date.Timep), Max = max(Date.Timep))
+# Year Min                 Max                
+# <dbl> <dttm>              <dttm>             
+#   1  2017 2017-01-25 14:00:37 2017-12-31 16:03:00
+# 2  2018 2018-01-01 03:00:37 2018-12-31 23:02:30
+# 3  2019 2019-01-01 10:00:37 2019-12-31 19:01:32
+# 4  2020 2020-01-01 06:00:37 2020-12-31 13:02:08
+# 5  2021 2021-01-01 00:00:37 2021-12-31 20:03:00
+# 6  2022 2022-01-01 07:00:37 2022-06-07 20:00:44
 
 # Breeding = Apr 1 to Sep 30; Non-Breeding = Oct 1 - Mar 30
 telem.sf$Season <-as.factor(ifelse(telem.sf$Month < 4 | telem.sf$Month > 9, "Non-Breeding",
@@ -236,16 +257,31 @@ table(telem.sf$Month, telem.sf$Season) # check to make sure Seasons are pulling 
 
 ###--- check number of fixes per animal / day / etc
 # Check the multiple counts of animals per day
-counts.per.day <- telem.sf %>% group_by(AnimalID,Day.j) %>% 
-  summarise(total = n(),unique = unique(Day.j)) %>% 
-  group_by(AnimalID,total) %>% 
+counts.per.day <- telem.sf %>% 
+  st_drop_geometry() %>%
+  group_by(AnimalID, Day.j) %>% 
+  summarize(total = n(), unique = unique(Day.j)) %>% 
+  group_by(AnimalID, total) %>% 
   summarise(total.j = n()) 
+  
+# Only select first fix per animal per day
+telem.1fix <- telem.sf %>%
+  group_by(AnimalID, Day.j) %>%
+  slice_min(Date.Timep)
+
+# redo
+counts.per.day <- telem.1fix %>% 
+  st_drop_geometry() %>%
+  group_by(AnimalID, Day.j) %>% 
+  summarize(total = n(), unique = unique(Day.j)) %>% 
+  group_by(AnimalID, total) %>% 
+  summarise(total.j = n())
 
 pp = ggplot(data = counts.per.day, aes(total,total.j,col=AnimalID)) + 
   geom_point() + 
   ggtitle('Number of fixes per julien day per animal'); pp 
 # only 1 fix per day
-
+telem.sf <- telem.1fix
 
 ## Q : How many fixes do we have per animal?
 p1 <- ggplot(telem.sf) + 
@@ -253,14 +289,14 @@ p1 <- ggplot(telem.sf) +
   theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
   facet_wrap(~Year, ncol=1)  ; p1
 
-unique(telem.sf$AnimalID) # 29 animals
-table(telem.sf$AnimalID, telem.sf$Year) # 4 with data for both years
+unique(telem.sf$AnimalID) # 104 animals
+table(telem.sf$AnimalID, telem.sf$Year) # 5 with data for all 6 years
 
 ## Q:  What about temporal variability - number of years? time of year? 
-id.date <- telem.sf %>% group_by(AnimalID, Year, Month) %>% summarise(count = n()) ; id.date
-id.season.yr <- telem.sf %>% group_by(AnimalID, Year, Season) %>% summarise(count = n()) ; id.season.yr
-id.season <- telem.sf %>% group_by(AnimalID, Season) %>% summarise(count = n()) ; id.season
-id.jdate <- telem.sf %>% group_by(AnimalID, Year) %>% summarise(count = length(unique(Day.j))) ; id.jdate 
+id.date <- telem.sf %>% st_drop_geometry() %>% group_by(AnimalID, Year, Month) %>% summarise(count = n()) ; id.date
+id.season.yr <- telem.sf %>% st_drop_geometry() %>% group_by(AnimalID, Year, Season) %>% summarise(count = n()) ; id.season.yr
+id.season <- telem.sf %>% st_drop_geometry() %>% group_by(AnimalID, Season) %>% summarise(count = n()) ; id.season
+id.jdate <- telem.sf %>% st_drop_geometry() %>% group_by(AnimalID, Year) %>% summarise(count = length(unique(Day.j))) ; id.jdate 
 
 
 p2 <- ggplot(id.date,aes(x = as.factor(Year), count)) + 
@@ -305,7 +341,7 @@ p7 <- ggplot(id.jdate,aes(x = as.factor(Year), count)) +
 head(anml)
 head(telem.sf)
 
-HR.sf <- left_join(telem.sf %>% select(AnimalID, Group.New, Date.Timep, Year, Month, Day.j, Season),
+HR.sf <- left_join(telem.sf %>% select(AnimalID, Date.Timep, Year, Month, Day.j, Season),
                    anml %>% select(-Cptr_Date, -Rls_Date), by = "AnimalID")
 
 glimpse(HR.sf)
@@ -338,8 +374,12 @@ HR.df <- HR.sf %>% st_drop_geometry() # create non-spatial attribute table for j
 summary(HR.sf)
 table(HR.sf$Year, HR.sf$Season)
 # Breeding Non-Breeding
-# 2017     1071          218
-# 2018     1156          191
+# 2017     1697          931
+# 2018     3214         2430
+# 2019     4036         3459
+# 2020     6497         5274
+# 2021    10616         8717
+# 2022     4595         5013
 
 ###--- Calculate MCPs for each animal, annually and seasonally (i.e.,combining years but separating seasons)
 # group into seasons for each animal 
@@ -347,26 +387,26 @@ HR.sf$Animal_Season <- as.factor(paste(HR.sf$AnimalID, HR.sf$Season, sep="_"))
 HR.sf$Animal_Year <- as.factor(paste(HR.sf$AnimalID, as.factor(HR.sf$Year), sep="_"))
 
 as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Season, sort=TRUE)) 
-# 43 unique animal-seasons but only 24 with >= 50 obs, 29 with >= 25 obs
-as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) 
-# 34 unique animal-years but only 20 with >= 50 obs, 24 with >= 25 obs
+# 206 unique animal-seasons but only 183 with >= 50 obs, 190 with >= 25 obs
+as.data.frame(HR.sf %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) %>% view()
+# 281 unique animal-years but only 271 with >= 50 obs, 272 with >= 25 obs
 
 ###--- DECISION POINT - how many obs minimum for HR estimate?
-# remove animals with < 25 points per Animal_Season
+# remove animals with < 50 points per Animal_Season
 head(HR.sf)
 HR.sf.AS <- HR.sf
-HR.sf.AS <- HR.sf.AS[HR.sf.AS$Animal_Season %in% names(table(HR.sf.AS$Animal_Season)) [table(HR.sf.AS$Animal_Season) >= 25], ]
+HR.sf.AS <- HR.sf.AS[HR.sf.AS$Animal_Season %in% names(table(HR.sf.AS$Animal_Season)) [table(HR.sf.AS$Animal_Season) >= 50], ]
 HR.sf.AS$Animal_Season <- droplevels(HR.sf.AS$Animal_Season)
-nrow(HR.sf) - nrow(HR.sf.AS) # dropped 145 points
+nrow(HR.sf) - nrow(HR.sf.AS) # dropped 504 points out of 56,479
 
-# remove animals with < 25 points per Animal_Year
+# remove animals with < 50 points per Animal_Year
 HR.sf.AY <- HR.sf
-HR.sf.AY <- HR.sf.AY[HR.sf.AY$Animal_Year %in% names(table(HR.sf.AY$Animal_Year)) [table(HR.sf.AY$Animal_Year) >= 25], ]
+HR.sf.AY <- HR.sf.AY[HR.sf.AY$Animal_Year %in% names(table(HR.sf.AY$Animal_Year)) [table(HR.sf.AY$Animal_Year) >= 50], ]
 HR.sf.AY$Animal_Year <- droplevels(HR.sf.AY$Animal_Year)
-nrow(HR.sf) - nrow(HR.sf.AY) # dropped 108 points
+nrow(HR.sf) - nrow(HR.sf.AY) # dropped 229 points of 56,479
 
-as.data.frame(HR.sf.AS %>% group_by(AnimalID) %>% count(Season, sort=TRUE)) # 0 animal-seasons below 25 obs; 29 unique animal-seasons
-as.data.frame(HR.sf.AY %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) # 0 animal-seasons below 25 obs; 24 unique animal-seasons
+as.data.frame(HR.sf.AS %>% group_by(AnimalID) %>% count(Season, sort=TRUE)) # 0 animal-seasons below 50 obs; 183 unique animal-seasons
+as.data.frame(HR.sf.AY %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) # 0 animal-years below 50 obs; 271 unique animal-years
 
 ######################################################################
 #### SUBSET DATA TO ANIMAL_SEASON AND ANIMAL_YEAR MIN OBS (END) 

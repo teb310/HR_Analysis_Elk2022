@@ -1,0 +1,28 @@
+{
+    "id": "AF69EC84",
+    "path": null,
+    "project_path": null,
+    "type": "object_explorer",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1654726981497.0,
+    "source_on_save": false,
+    "relative_order": 9,
+    "properties": {
+        "id": "af64cd49b2214a9299fe6e772324e13c",
+        "name": "pp",
+        "title": "pp",
+        "language": "R",
+        "source_window_id": "",
+        "Source": "Source"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 0,
+    "encoding": "",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1654726981497,
+    "read_only": false,
+    "read_only_alternatives": []
+}
