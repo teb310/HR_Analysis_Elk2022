@@ -3,7 +3,7 @@
 # script to run MCPs
 # following from 00_TelemDataPrep.R
 # adapted from script written by genevieve perkins (genevieve.perkins@gov.bc.ca)
-# modified by Joanna Burgar (Joanna.Burgar@gov.bc.ca) - 06-Oct-2019
+# modified by Joanna Burgar (Joanna.Burgar@gov.bc.ca) - 06-Oct-2019 and Tristen Brush (tristen.brush@gov.bc.ca) - July 2022
 #####################################################################################
 .libPaths("C:/Program Files/R/R-4.2.0/library") # to ensure reading/writing libraries from C drive (H drive too slow)
 
@@ -56,7 +56,7 @@ ggplot() +
   ggtitle("Animal GPS locations")
 
 
-# Plot by Animal_Season (183 animal_seasons)
+# Plot by Animal_Season (189 animal_seasons)
 unique(HR.sf.AS$Animal_Season)
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
@@ -125,7 +125,7 @@ head(HR.df)
 ASmcp.95.sf <- st_as_sf(ASmcp.95)
 colnames(ASmcp.95.sf)[1] <- "Animal_Season" # change id back to Animal_Season
 ASmcp.95.sf <- dplyr::left_join(ASmcp.95.sf, 
-                                HR.df[c("Animal_Season","AnimalID","Group.New","Season","Species","Sex", "Age_Class")], 
+                                HR.df[c("Animal_Season","AnimalID","Season","Species","Sex", "Age_Class")], 
                                 by = "Animal_Season") 
 ASmcp.95.sf$HR_Type <- "MCP_95"
 
@@ -186,14 +186,14 @@ head(HR.df)
 AYmcp.95.sf <- st_as_sf(AYmcp.95)
 colnames(AYmcp.95.sf)[1] <- "Animal_Year" # change id back to Animal_Year
 AYmcp.95.sf <- dplyr::left_join(AYmcp.95.sf, 
-                                HR.df[c("Animal_Year","AnimalID","Group.New","Year","Species","Sex", "Age_Class")], 
+                                HR.df[c("Animal_Year","AnimalID","Year","Species","Sex", "Age_Class")], 
                                 by = "Animal_Year") 
 AYmcp.95.sf$HR_Type <- "MCP_95"
 
 AYmcp.50.sf <- st_as_sf(AYmcp.50)
 colnames(AYmcp.50.sf)[1] <- "Animal_Year" # change id back to Animal_Year
 AYmcp.50.sf <- dplyr::left_join(AYmcp.50.sf, 
-                                HR.df[c("Animal_Year","AnimalID","Group.New","Year","Species","Sex", "Age_Class")], 
+                                HR.df[c("Animal_Year","AnimalID","Year","Species","Sex", "Age_Class")], 
                                 by = "Animal_Year") 
 AYmcp.50.sf$HR_Type <- "MCP_50"
 

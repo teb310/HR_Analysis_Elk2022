@@ -45,7 +45,7 @@ anml.full <- anml.full %>%
   mutate(AnimalID = as.numeric(row.names(anml.full)),
          Cptr_Northing = as.numeric(`Northing (capture)`),
          Cptr_Easting = as.numeric(`Easting (capture)`),
-         Species = as.factor(Species), 
+         Species = as.factor(Species),
          Sex = as.factor(Sex)) %>%
   select(AnimalID,
          CollarID,
@@ -418,6 +418,9 @@ nrow(HR.sf) - nrow(HR.sf.AY) # dropped 229 points of 56,479
 
 as.data.frame(HR.sf.AS %>% group_by(AnimalID) %>% count(Season, sort=TRUE)) # 0 animal-seasons below 50 obs; 183 unique animal-seasons
 as.data.frame(HR.sf.AY %>% group_by(AnimalID) %>% count(Year, sort=TRUE)) # 0 animal-years below 50 obs; 271 unique animal-years
+
+# update HR.df
+HR.df <- HR.sf %>% st_drop_geometry()
 
 ######################################################################
 #### SUBSET DATA TO ANIMAL_SEASON AND ANIMAL_YEAR MIN OBS (END) 
