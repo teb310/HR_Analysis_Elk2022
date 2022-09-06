@@ -14,7 +14,7 @@
 
 # run libraries
 library(ggplot2)    # for plotting
-library(dbplyr)  # for data manipulation
+library(dbplyr)     # for data manipulation
 library(stringr)    # for formatting character data
 library(lubridate)  # for date-time conversions
 library(sf)         # for uploading shapefiles and working with sf objects
@@ -46,7 +46,8 @@ anml.full <- anml.full %>%
          Cptr_Northing = as.numeric(`Northing (capture)`),
          Cptr_Easting = as.numeric(`Easting (capture)`),
          Species = as.factor(Species),
-         Sex = as.factor(Sex)) %>%
+         Sex = as.factor(Sex))
+anml.full <- anml.full %>%
   select(AnimalID,
          CollarID,
          Species, 
@@ -260,8 +261,13 @@ telem.sf %>% st_drop_geometry() %>% group_by(Year) %>% summarise(Min = min(Date.
 # 6  2022 2022-01-01 07:00:37 2022-06-07 20:00:44
 
 # Breeding = Apr 1 to Sep 30; Non-Breeding = Oct 1 - Mar 30
-telem.sf$Season <-as.factor(ifelse(telem.sf$Month < 4 | telem.sf$Month > 9, "Non-Breeding",
-                                 ifelse(telem.sf$Month > 3 | telem.sf$Month < 10, "Breeding", NA)))
+# telem.sf$Season <-as.factor(ifelse(telem.sf$Month < 4 | telem.sf$Month > 9, "Non-Breeding",
+#                                  ifelse(telem.sf$Month > 3 | telem.sf$Month < 10, "Breeding", NA)))
+
+# Winter = Dec 1 to Mar 31; Non-winter = Apr 1 to Nov 30
+telem.sf$Season <-as.factor(ifelse(telem.sf$Month < 4 | telem.sf$Month > 11, "Winter",
+                                   ifelse(telem.sf$Month > 3 | telem.sf$Month < 12, "Non-winter", NA)))
+                                   
 
 table(telem.sf$Month, telem.sf$Season) # check to make sure Seasons are pulling correct dates
 # pulling dates correctly, note that telemetry data is minimal in non-breeding season

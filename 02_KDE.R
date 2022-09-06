@@ -23,10 +23,10 @@ library(sf)
 library(sp)
 library(adehabitatHR)
 
-# set up working directories on H drive
-InputDir <- c("H:/R/Analysis/Generic_HomeRange/Input")
-OutputDir <- c("H:/R/Analysis/Generic_HomeRange/Output")
-GISDir <- c("H:/R/Analysis/Generic_HomeRange/GISDir")
+# set up working directories
+InputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Input")
+OutputDir <- c("C:/Users/TBRUSH/R/HR_Analysis_Elk2022/Output")
+GISDir <- c("H:/ArcGIS/HR_Analysis_Elk2022")
 
 ##############################################################
 #### LOAD and REVIEW DATA (BEGINNING)
@@ -36,18 +36,18 @@ setwd(InputDir)
 load("HR_InputData.RData")
 
 # review spatial object data - check to see if loaded properly
-st_geometry(HR.sf) # currently in 4326 CRS, lat/long
+st_geometry(HR.sf) # currently in WGS84 CRS, lat/long
 HR.sf$AnimalID <- as.factor(HR.sf$AnimalID)
 names(HR.sf)
 summary(HR.sf)
 
 # plot to check
-# check the spread of animals with maped locations 
+# check the spread of animals with mapped locations 
 bc <- bc_bound()
 SC <- nr_districts() %>% filter(ORG_UNIT %in% c("DCK", "DSQ", "DSC")) # revise as appropriate to study area
 
 # Plot by AnimalID
-unique(HR.sf$AnimalID) #29 individuals
+unique(HR.sf$AnimalID) #104 individuals
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
   geom_sf(data=HR.sf, aes(fill=AnimalID, col=AnimalID))+
@@ -57,7 +57,7 @@ ggplot() +
 
 
 # Plot by Animal_Season
-unique(HR.sf.AS$Animal_Season) # 29 animal_seasons
+unique(HR.sf.AS$Animal_Season) # 189 animal_seasons
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
   geom_sf(data=HR.sf.AS, aes(fill=Animal_Season, col=Animal_Season))+
@@ -67,7 +67,7 @@ ggplot() +
 
 
 # Plot by Animal_Year
-unique(HR.sf.AY$Animal_Year) # 24 individuals
+unique(HR.sf.AY$Animal_Year) # 271 individuals
 ggplot() +
   geom_sf(data=SC, fill="white", col="gray") +
   geom_sf(data=HR.sf.AY, aes(fill=Animal_Year, col=Animal_Year))+
@@ -97,9 +97,9 @@ HR.sf.AS_utm$geometry
 HR.sp.AS <- as(HR.sf.AS_utm, "Spatial")
 class(HR.sp.AS)
 
-kde1.AS  <- kernelUD(HR.sp.AS[c("Animal_Season")], h = "href", kern = c("bivnorm"), extent = 2) # default grid and extent
+kde1.AS  <- kernelUD(HR.sp.AS[c("Animal_Season")], h = "href", kern = c("bivnorm"), grid = 80) # default extent
 
-length(kde1.AS) # 29 Animal_Season
+length(kde1.AS) # 189 Animal_Seasons
 
 # create vector listing the h-value for each KDE
 kde1.AS_href <- rep(NA, length(kde1.AS))
@@ -109,36 +109,45 @@ for (i in 1:length(kde1.AS_href )){
 }
 
 min(kde1.AS_href); max(kde1.AS_href); mean(kde1.AS_href)
-# [1] 105.0504
-# [1] 9484.046
-# [1] 1546.877
-# huge variation in href depending on Animal_Season
+# [1] 196.1921
+# [1] 4080.896
+# [1] 862.2417
+# large variation in href depending on breeding Season
+
+# [1] 135.5992
+# [1] 2383.603
+# [1] 809.5804
+# smaller variation when using winter vs nonwinter.
 
 # create KDEs
 ver95 <- getverticeshr(kde1.AS,95) ;   ver95.sf<- st_as_sf(ver95)
 ver50 <- getverticeshr(kde1.AS,50) ;   ver50.sf<- st_as_sf(ver50)
 
 plot(st_geometry(ver95.sf),col = "red")
-plot(st_geometry(ver50.sf),col = "yellow", add = TRUE)
-plot(HR.sp.AS, pch = 1, size = 0.5, add = TRUE)     # Add points 
+plot(st_geometry(ver50.sf),col = "yellow", add = TRUE) 
+plot(HR.sp.AS, pch = 1, size = 0.1, add = TRUE)     # Add points 
 
 # add in meta-data and then export shapefiles
 colnames(ver95.sf)[1] <- "Animal_Season"
 ver95.sf <- dplyr::left_join(ver95.sf, 
-                             unique(HR.df %>% dplyr::select("Animal_Season","AnimalID","Group.New","Season","Species","Sex", "Age_Class")), 
+                             unique(HR.df %>% dplyr::select("Animal_Season","AnimalID","Season","Species","Sex", "Age_Class")), 
                              by = "Animal_Season")
 ver95.sf$HR_Type <- "KDE_95"
 
 colnames(ver50.sf)[1] <- "Animal_Season"
 ver50.sf <- dplyr::left_join(ver50.sf, 
-                             unique(HR.df %>% dplyr::select("Animal_Season","AnimalID","Group.New","Season","Species","Sex", "Age_Class")), 
+                             unique(HR.df %>% dplyr::select("Animal_Season","AnimalID","Season","Species","Sex", "Age_Class")), 
                              by = "Animal_Season") 
 ver50.sf$HR_Type <- "KDE_50"
 
 ver1AS.sf <- rbind(ver50.sf,ver95.sf)
 
 setwd(GISDir)
-st_write(ver1AS.sf,"KDE_Animal_Season_href.shp")
+st_write(ver1AS.sf,"KDE_Animal_Season_href.shp", append=FALSE)
+
+# write to csv
+setwd(OutputDir)
+ver1AS.sf %>% st_drop_geometry() %>% write.csv("KDE_Animal_Season.csv")
 
 ###--- ANIMAL_YEAR 
 st_geometry(HR.sf.AY)
@@ -148,9 +157,9 @@ HR.sf.AY_utm$geometry
 HR.sp.AY <- as(HR.sf.AY_utm, "Spatial")
 class(HR.sp.AY)
 
-kde1.AY  <- kernelUD(HR.sp.AY[c("Animal_Year")], h = "href", kern = c("bivnorm"), extent = 2) # default grid and extent
+kde1.AY  <- kernelUD(HR.sp.AY[c("Animal_Year")], h = "href", kern = c("bivnorm"), grid = 80) # default extent and extent
 
-length(kde1.AY) # 24 Animal_Year
+length(kde1.AY) # 271 Animal_Year
 
 # create vector listing the h-value for each KDE
 kde1.AY_href <- rep(NA, length(kde1.AY))
@@ -160,10 +169,10 @@ for (i in 1:length(kde1.AY_href )){
 }
 
 min(kde1.AY_href); max(kde1.AY_href); mean(kde1.AY_href)
-# [1] 105.0504
-# [1] 13872.24
-# [1] 1835.504
-# huge variation in href depending on Animal_Year
+# [1] 114.1538
+# [1] 2379.173
+# [1] 862.9595
+# large variation in href depending on Animal_Year
 
 # create KDEs
 ver95 <- getverticeshr(kde1.AY,95) ;   ver95.sf<- st_as_sf(ver95)
@@ -171,25 +180,29 @@ ver50 <- getverticeshr(kde1.AY,50) ;   ver50.sf<- st_as_sf(ver50)
 
 plot(st_geometry(ver95.sf),col = "red")
 plot(st_geometry(ver50.sf),col = "yellow", add = TRUE)
-plot(HR.sp.AY, pch = 1, size = 0.5, add = TRUE)     # Add points 
+plot(HR.sp.AY, pch = 1, size = 0.1, add = TRUE)     # Add points 
 
 # add in meta-data and then export shapefiles
 colnames(ver95.sf)[1] <- "Animal_Year"
 ver95.sf <- dplyr::left_join(ver95.sf, 
-                             unique(HR.df %>% dplyr::select("Animal_Year","AnimalID","Group.New","Year","Species","Sex", "Age_Class")), 
+                             unique(HR.df %>% dplyr::select("Animal_Year","AnimalID","Year","Species","Sex", "Age_Class")), 
                              by = "Animal_Year") 
 ver95.sf$HR_Type <- "KDE_95"
 
 colnames(ver50.sf)[1] <- "Animal_Year"
 ver50.sf <- dplyr::left_join(ver50.sf, 
-                             unique(HR.df %>% dplyr::select("Animal_Year","AnimalID","Group.New","Year","Species","Sex", "Age_Class")), 
+                             unique(HR.df %>% dplyr::select("Animal_Year","AnimalID","Year","Species","Sex", "Age_Class")), 
                              by = "Animal_Year") 
 ver50.sf$HR_Type <- "KDE_50"
 
 ver1AY.sf <- rbind(ver50.sf,ver95.sf)
 
 setwd(GISDir)
-st_write(ver1AY.sf,"KDE_Animal_Year_href.shp")
+st_write(ver1AY.sf,"KDE_Animal_Year_href.shp", append=FALSE)
+
+# write to csv
+setwd(OutputDir)
+ver1AY.sf %>% st_drop_geometry() %>% write.csv("KDE_Animal_Year.csv")
 
 # for housekeeping and to reduce space, remove kde objects once output has been saved
 rm(kde1.AS, kde1.AY)
